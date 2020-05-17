@@ -1,11 +1,24 @@
+import contextvars
 import io
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+from core.request import Request
+
+request = contextvars.ContextVar("request")
 
 
-class HTTPRequestHandler(SimpleHTTPRequestHandler):
+class HTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Serve a GET request."""
         f = io.BytesIO(b"{\"name\": \"funnydman\"}")
+        self.parse_request()
+        _request = Request(
+            method=self.command,
+            path=self.path,
+            headers=self.headers
+        )
+        request.set(_request)
+
         f = io.BufferedReader(f)
         headers = [
             b'HTTP/1.0 200 OK\r\n',
@@ -14,13 +27,16 @@ class HTTPRequestHandler(SimpleHTTPRequestHandler):
             b'Content-type: application/json; charset=utf-8\r\n',
             b'Content-Length: 200\r\n', b'\r\n'
         ]
+        # todo: find out right handler or request
+
         to_send = b"".join(headers)
         self.wfile.write(to_send)
-        if f:
-            try:
-                self.copyfile(f, self.wfile)
-            finally:
-                f.close()
+        self.wfile.write(f.read())
+        self.log_request(200)
+
+    def handle_one_request(self):
+        print("Test")
+        # super().handle_one_request()
 
 
 class Server:
@@ -34,4 +50,7 @@ class Server:
         httpd.serve_forever()
 
 
-Server(HTTPServer, HTTPRequestHandler).serve()
+server = Server(HTTPServer, HTTPRequestHandler)
+
+if __name__ == '__main__':
+    server.serve()
