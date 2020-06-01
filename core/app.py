@@ -1,17 +1,19 @@
-from core.http_server import server
+from http.server import HTTPServer
+
+from core.http_server import Server, HTTPRequestHandler
 
 
-class Toxic:
-    def __new__(cls):
-        if not hasattr(cls, 'instance'):
-            cls.instance = super().__new__(cls)
-        return cls.instance
+class BaseToxic(Server):
+    def __init__(self):
+        super().__init__(HTTPServer, HTTPRequestHandler)
+        self.server = Server(self.server_class, self.handler_class)
 
+
+class Toxic(BaseToxic):
     routers_collection = []
 
     def add_router(self, router):
         self.routers_collection.append(router)
 
     def run(self):
-        # run server
-        server.serve()
+        self.server.serve()

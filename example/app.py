@@ -1,3 +1,7 @@
+import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.app import Toxic
 from core.resource import Resource, APIRouter
 
