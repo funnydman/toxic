@@ -7,11 +7,6 @@ from typing import Callable
 from core.request import Request
 
 
-class MockHandler:
-    def get(self, request):
-        return {'Hello': 'world'}
-
-
 class HTTPRequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def construct_response_header():
@@ -31,8 +26,8 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
         self.handle_one_request()
-        # while not self.close_connection:
-        #     self.handle_one_request()
+        while not self.close_connection:
+            self.handle_one_request()
 
     def __handle_one_request(self):
         try:
@@ -55,13 +50,11 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             self.log_error("Request timed out: %r", e)
             self.close_connection = True
 
-    def get_handler(self, method: str, path: str) -> Callable:
-        # mock
-        return MockHandler().get
+    def get_handler(self, handler) -> Callable:
+        return getattr(handler.handler_cls(), handler.method.lower())
 
     def handle_one_request(self):
         self.__handle_one_request()
-        # self.parse_request()
 
         headers = self.construct_response_header()
         # todo: find out right handler or request
@@ -72,18 +65,14 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             headers=self.headers
         )
 
-        # mname = 'do_' + self.command
-        # if not hasattr(self, mname):
-        #     self.send_error(
-        #         HTTPStatus.NOT_IMPLEMENTED,
-        #         "Unsupported method (%r)" % self.command)
-        #     return
-        # method = getattr(self, mname)
-        # method()
-        # self.wfile.flush()  # actually send the response if not already done.
-
         # todo: find appreciate router by path
-        response = self.get_handler(self.command, self.path)(_request)
+        handler = [r for router in self.app.routers_collection for r in router.routers if r.path == '/hello']
+        if handler:
+            handler = handler.pop()
+            handler.method = 'GET'
+            response = self.get_handler(handler)(_request)
+        else:
+            return
 
         f = io.BytesIO(json.dumps(response).encode())
         f = io.BufferedReader(f)
@@ -91,7 +80,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         to_send = b"".join(headers)
         self.wfile.write(to_send)
         self.wfile.write(f.read())
-        self.wfile.flush()
+        self.wfile.flush()  # actually send the response if not already done.
 
         self.log_request(200)
 
@@ -104,12 +93,12 @@ class Server:
         self.server_class = server_class
         self.handler_class = handler_class
 
-    def serve(self):
+    def run(self, app):
         server_address = ('', 8000)
         httpd = self.server_class(server_address, self.handler_class)
+        self.handler_class.app = app
+
         httpd.serve_forever()
 
 
-if __name__ == '__main__':
-    server = Server(HTTPServer, HTTPRequestHandler)
-    server.serve()
+server = Server(HTTPServer, HTTPRequestHandler)

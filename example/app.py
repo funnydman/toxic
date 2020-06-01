@@ -1,6 +1,8 @@
 import os
 import sys
 
+from core.http_server import server
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.app import Toxic
 from core.resource import Resource, APIRouter
@@ -8,19 +10,19 @@ from core.resource import Resource, APIRouter
 router = APIRouter()
 
 
-class MainRouter(Resource):
-    def get(self):
-        # I need to have here request object
+class MainResource(Resource):
+    def get(self, request):
         return {'user': 'funnydman'}
 
     def post(self):
-        raise NotImplementedError
+        raise {}
 
 
-router.register('/hello', MainRouter, name='my_first_router')
+router.register('/hello', MainResource, name='my_first_router')
 
 app = Toxic()
+
 app.add_router(router)
 
 if __name__ == '__main__':
-    app.run()
+    server.run(app)

@@ -1,19 +1,21 @@
 from http.server import HTTPServer
+from typing import List
 
 from core.http_server import Server, HTTPRequestHandler
+from core.resource import APIRouter
 
 
 class BaseToxic(Server):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(HTTPServer, HTTPRequestHandler)
         self.server = Server(self.server_class, self.handler_class)
 
 
 class Toxic(BaseToxic):
-    routers_collection = []
+    def __init__(self):
+        super().__init__()
 
-    def add_router(self, router):
+    routers_collection: List[APIRouter] = []
+
+    def add_router(self, router: APIRouter) -> None:
         self.routers_collection.append(router)
-
-    def run(self):
-        self.server.serve()
