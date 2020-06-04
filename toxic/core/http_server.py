@@ -5,6 +5,7 @@ from inspect import signature
 from typing import Callable, Tuple
 
 from toxic.core import status
+from toxic.core.exceptions import HTTPException
 from toxic.core.request import Request
 from toxic.core.resource import Router
 
@@ -48,9 +49,10 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             params: dict,
             request: Request
     ) -> Callable:
-        _handler = getattr(handler.handler_cls(), method.lower())
+        _handler = getattr(handler.handler_cls(), method.lower(), None)
         if _handler is None:
-            self.send_error(code=status.HTTP_BAD_REQUEST, message='method is not allowed')
+            self.send_error(code=status.HTTP_NOT_FOUND, message='method is not allowed')
+            raise HTTPException(detail='method is not allowed')
 
         params = {**params, 'request': request}
 

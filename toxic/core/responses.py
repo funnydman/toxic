@@ -37,3 +37,7 @@ class HTMLResponse(BaseResponse):
 
     def render(self) -> str:
         return str(self.content)
+
+
+class HTTPRedirect:
+    pass
