@@ -1,10 +1,11 @@
 import io
-import json
+import re
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from inspect import signature
 from typing import Callable
 
-from core.request import Request
+from toxic.core.request import Request
 
 
 class HTTPRequestHandler(BaseHTTPRequestHandler):
@@ -50,14 +51,26 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             self.log_error("Request timed out: %r", e)
             self.close_connection = True
 
-    def get_handler(self, handler) -> Callable:
-        return getattr(handler.handler_cls(), handler.method.lower())
+    def get_handler(self, handler, method: str) -> Callable:
+        _handler = getattr(handler.handler_cls(), method.lower())
+        if _handler is None:
+            self.send_error(code=404, message='method is not allowed')
+        return _handler
+
+    def find_handler_by_path(self, path: str):
+        for router in self.app.routers_collection:
+            for r in router.routers:
+                match = re.match(r.path, path)
+                if match:
+                    params = match.groupdict()
+                    return r, params
+        # raise 404
+        self.send_error(code=404)
 
     def handle_one_request(self):
         self.__handle_one_request()
 
         headers = self.construct_response_header()
-        # todo: find out right handler or request
 
         _request = Request(
             method=self.command,
@@ -65,16 +78,13 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             headers=self.headers
         )
 
-        # todo: find appreciate router by path
-        handler = [r for router in self.app.routers_collection for r in router.routers if r.path == '/hello']
-        if handler:
-            handler = handler.pop()
-            handler.method = 'GET'
-            response = self.get_handler(handler)(_request)
-        else:
-            return
+        handler, params = self.find_handler_by_path(_request.path)
 
-        f = io.BytesIO(json.dumps(response).encode())
+        handler = self.get_handler(handler, self.command)
+
+        response = self.call_handler(handler, params=params)
+
+        f = io.BytesIO(response.render().encode())
         f = io.BufferedReader(f)
 
         to_send = b"".join(headers)
@@ -86,6 +96,20 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
 
     def __send_response(self) -> None:
         return
+
+    def call_handler(self, handler, params=None):
+        try:
+            expected_params = signature(handler).parameters
+            passed_keys = set(expected_params.keys()) & set(params.keys())
+            result = {k: v for k, v in params.items() if k in passed_keys}
+            if 'request' in expected_params:
+                # pass request
+                result['request'] = {}
+
+            result = handler(**result)
+            return result
+        except Exception as e:
+            self.send_error(code=500, explain=str(e))
 
 
 class Server:

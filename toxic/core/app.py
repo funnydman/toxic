@@ -1,8 +1,8 @@
 from http.server import HTTPServer
 from typing import List
 
-from core.http_server import Server, HTTPRequestHandler
-from core.resource import APIRouter
+from toxic.core.http_server import Server, HTTPRequestHandler
+from toxic.core.resource import APIRouter
 
 
 class BaseToxic(Server):

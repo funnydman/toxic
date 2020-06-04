@@ -1,24 +1,24 @@
 import os
 import sys
 
-from core.http_server import server
+from toxic.core import Response
+from toxic.core import server, Toxic
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.app import Toxic
-from core.resource import Resource, APIRouter
+from toxic.core.resource import Resource, APIRouter
 
 router = APIRouter()
 
 
 class MainResource(Resource):
-    def get(self, request):
-        return {'user': 'funnydman'}
+    def get(self, request, name):
+        return Response({'user': name})
 
     def post(self):
         raise {}
 
 
-router.register('/hello', MainResource, name='my_first_router')
+router.register('/hello/(?P<name>\w+)', MainResource, name='my_first_router')
 
 app = Toxic()
 
