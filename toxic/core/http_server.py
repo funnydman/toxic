@@ -1,26 +1,16 @@
 import io
 import re
-from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from inspect import signature
-from typing import Callable
+from typing import Callable, Tuple
 
+from toxic.core import status
 from toxic.core.request import Request
+from toxic.core.resource import Router
 
 
 class HTTPRequestHandler(BaseHTTPRequestHandler):
-    @staticmethod
-    def construct_response_header():
-        # Todo: proper implementation
-        headers = [
-            b'HTTP/1.0 200 OK\r\n',
-            b'Server: SimpleHTTP/0.6 Python/3.8.2\r\n',
-            b'Date: Fri, 15 May 2020 20:18:36 GMT\r\n',
-            b'Content-type: application/json; charset=utf-8\r\n',
-            b'Content-Length: 200\r\n',
-            b'\r\n'
-        ]
-        return headers
+    _header_buffer = []
 
     def handle(self):
         """Handle multiple requests if necessary."""
@@ -37,7 +27,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
                 self.requestline = ''
                 self.request_version = ''
                 self.command = ''
-                self.send_error(HTTPStatus.REQUEST_URI_TOO_LONG)
+                self.send_error(status.REQUEST_URI_TOO_LONG)
                 return
             if not self.raw_requestline:
                 self.close_connection = True
@@ -51,13 +41,27 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             self.log_error("Request timed out: %r", e)
             self.close_connection = True
 
-    def get_handler(self, handler, method: str) -> Callable:
+    def process_request(
+            self,
+            handler,
+            method: str,
+            params: dict,
+            request: Request
+    ) -> Callable:
         _handler = getattr(handler.handler_cls(), method.lower())
         if _handler is None:
-            self.send_error(code=404, message='method is not allowed')
-        return _handler
+            self.send_error(code=status.HTTP_BAD_REQUEST, message='method is not allowed')
 
-    def find_handler_by_path(self, path: str):
+        params = {**params, 'request': request}
+
+        params_to_inject = self.__get_injection_params(_handler, params)
+        try:
+            result = _handler(**params_to_inject)
+            return result
+        except Exception as e:
+            self.send_error(code=status.HTTP_SERVER_ERROR, explain=str(e))
+
+    def find_handler_by_path(self, path: str) -> Tuple[Router, dict]:
         for router in self.app.routers_collection:
             for r in router.routers:
                 match = re.match(r.path, path)
@@ -70,8 +74,6 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
     def handle_one_request(self):
         self.__handle_one_request()
 
-        headers = self.construct_response_header()
-
         _request = Request(
             method=self.command,
             path=self.path,
@@ -80,33 +82,57 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
 
         handler, params = self.find_handler_by_path(_request.path)
 
-        handler = self.get_handler(handler, self.command)
+        response = self.process_request(handler, self.command, params, _request)
 
-        response = self.call_handler(handler, params=params)
+        self._send_response(response)
+
+    def send_begin_header(self, status_code):
+        self._header_buffer = []
+        _header_str = f'HTTP/1.0 {status_code}\r\n'
+        self._header_buffer.append(_header_str.encode())
+
+    def __end_headers(self):
+        self._header_buffer.append(b"\r\n")
+        _headers_str = b"".join(self._header_buffer)
+        self.wfile.write(_headers_str)
+        # clear the buffer
+        self._header_buffer = []
+
+    def _send_response(self, response):
+        self.send_begin_header(response.status_code)
+
+        self.__send_header("Content-Type", response.content_type)
+
+        self.__send_header('Server', self.version_string())
+        self.__send_header('Date', self.date_time_string())
+        self.__send_header('Content-Length', response.content_length)
+        self.__end_headers()
+
+        self.__send_data(response)
+
+    def __send_data(self, response) -> None:
 
         f = io.BytesIO(response.render().encode())
         f = io.BufferedReader(f)
 
-        to_send = b"".join(headers)
-        self.wfile.write(to_send)
         self.wfile.write(f.read())
         self.wfile.flush()  # actually send the response if not already done.
 
-        self.log_request(200)
+        self.log_request(response.status_code)
 
-    def __send_response(self) -> None:
-        return
+    def __send_header(self, keyword: str, value: str) -> None:
+        self._header_buffer.append(
+            f"{keyword}: {value}\r\n".encode('latin-1', 'strict')
+        )
 
-    def call_handler(self, handler, params=None):
+    def __get_injection_params(self, handler, params=None):
         try:
             expected_params = signature(handler).parameters
             passed_keys = set(expected_params.keys()) & set(params.keys())
             result = {k: v for k, v in params.items() if k in passed_keys}
             if 'request' in expected_params:
-                # pass request
-                result['request'] = {}
+                result['request'] = params['request']
 
-            result = handler(**result)
             return result
         except Exception as e:
             self.send_error(code=500, explain=str(e))
