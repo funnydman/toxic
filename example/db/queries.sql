@@ -3,4 +3,12 @@
 SELECT * from users;
 
 -- name: find-user-by-username
-select * from users where username=:username;
+SELECT id, username, email, password
+FROM users
+WHERE username = :username
+LIMIT 1;
+
+--name: find-user-by-username
+SELECT id, username, email, password FROM users WHERE email=:email LIMIT 1;
+
+

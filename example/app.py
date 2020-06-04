@@ -31,11 +31,9 @@ class HomeView(Resource):
         return Response({'user': user})
 
 
-# todo: handle uniqueness of name
-
-router.register('/', HomeView, name='my_first_router')
-router.register('/hello/json/(?P<name>\w+)', MainResource, name='my_first_router')
-router.register('/hello/html/(?P<name>\w+)', JsonHelloWorld, name='my_first_router')
+router.register('/', HomeView, name='index')
+router.register('/hello/json/(?P<name>\w+)', MainResource, name='name_in_json')
+router.register('/hello/html/(?P<name>\w+)', JsonHelloWorld, name='name_in_html')
 
 app = Toxic()
 

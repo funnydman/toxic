@@ -1,3 +1,6 @@
+from toxic.core.exceptions import ResourceNameMustBeUniqueError
+
+
 class Router:
     def __init__(self, path, handler_cls, name) -> None:
         self.path = path
@@ -7,9 +10,15 @@ class Router:
 
 class APIRouter:
     routers = []
+    registered_names = set()
 
-    def register(self, path, handler_cls, name):
-        self.routers.append(Router(path, handler_cls, name))
+    def register(self, path: str, handler_cls, name: str):
+        if name in self.registered_names:
+            raise ResourceNameMustBeUniqueError()
+        self.routers.append(
+            Router(path, handler_cls, name)
+        )
+        self.registered_names.add(name)
 
 
 class Resource:

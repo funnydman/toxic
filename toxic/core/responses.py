@@ -9,7 +9,7 @@ class BaseResponse(abc.ABC):
     def __init__(
             self,
             content: Any,
-            status_code: str = status.HTTP_OK
+            status_code: int = status.HTTP_OK
     ) -> None:
         self.status_code = status_code
         self.content = content

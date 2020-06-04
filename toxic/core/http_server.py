@@ -60,6 +60,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             return result
         except Exception as e:
             self.send_error(code=status.HTTP_SERVER_ERROR, explain=str(e))
+            raise
 
     def find_handler_by_path(self, path: str) -> Tuple[Router, dict]:
         for router in self.app.routers_collection:

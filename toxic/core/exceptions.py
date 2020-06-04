@@ -1,0 +1,2 @@
+class ResourceNameMustBeUniqueError(Exception):
+    pass
