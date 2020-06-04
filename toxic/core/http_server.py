@@ -143,8 +143,8 @@ class Server:
         self.server_class = server_class
         self.handler_class = handler_class
 
-    def run(self, app):
-        server_address = ('', 8000)
+    def run(self, app, host='', port=8000):
+        server_address = (host, port)
         httpd = self.server_class(server_address, self.handler_class)
         self.handler_class.app = app
 
