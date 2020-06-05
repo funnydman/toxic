@@ -4,3 +4,4 @@ class Request:
         self.path = path
         self.data = data
         self.headers = headers
+        self.data = data

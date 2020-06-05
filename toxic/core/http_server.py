@@ -4,6 +4,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from inspect import signature
 from typing import Callable, Tuple
 
+from toxic.constants import ContentType
 from toxic.core import status
 from toxic.core.exceptions import HTTPException
 from toxic.core.request import Request
@@ -74,13 +75,24 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         # raise 404
         self.send_error(code=404)
 
+    @staticmethod
+    def process_form_urlencoded_data(data_str: bytes) -> dict:
+        decoded = data_str.decode()
+        res = [obj.split('=') for obj in decoded.split('&')]
+        return dict(res)
+
     def handle_one_request(self):
         self.__handle_one_request()
+        data = {}
+
+        if self.headers['Content-Type'] == ContentType.application_form_urlencoded:
+            data = self.process_form_urlencoded_data(self.rfile.read())
 
         _request = Request(
             method=self.command,
             path=self.path,
-            headers=self.headers
+            headers=self.headers,
+            data=data
         )
 
         handler, params = self.find_handler_by_path(_request.path)
