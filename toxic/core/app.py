@@ -1,19 +1,15 @@
-from http.server import HTTPServer
 from typing import List
 
-from toxic.core.server.http_server import Server, HTTPRequestHandler
 from toxic.core.resource import APIRouter
 
 
-class BaseToxic(Server):
-    def __init__(self) -> None:
-        super().__init__(HTTPServer, HTTPRequestHandler)
-        self.server = Server(self.server_class, self.handler_class)
+class Toxic:
+    def __init__(self, version: str = None):
+        self.version = version
 
-
-class Toxic(BaseToxic):
-    def __init__(self):
-        super().__init__()
+    def __call__(self, environ: dict, start_response: StartResponse) -> None:
+        self.environ = environ
+        self.start_response = start_response
 
     routers_collection: List[APIRouter] = []
 

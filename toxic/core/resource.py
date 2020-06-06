@@ -10,18 +10,17 @@ class Router:
 
 class APIRouter:
     routers = []
-    registered_names = set()
+    _registered_names = set()
 
-    def register(self, path: str, handler_cls, name: str):
-        if name in self.registered_names:
+    def register(self, path: str, handler_cls, name: str) -> None:
+        if name in self._registered_names:
             raise ResourceNameMustBeUniqueError()
         self.routers.append(
             Router(path, handler_cls, name)
         )
-        self.registered_names.add(name)
+        self._registered_names.add(name)
 
 
 class Resource:
-    # need to get all methods of concrete class
     def __init__(self):
         pass

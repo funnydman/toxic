@@ -8,3 +8,7 @@ def render_template(path_to_file: str, params=None):
     with open(path_to_file, 'r') as file:
         content = file.read()
     return HTMLResponse(content)
+
+
+class HTTPRedirect:
+    pass

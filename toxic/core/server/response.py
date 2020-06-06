@@ -1,0 +1,2 @@
+class HTTPResponseHandler:
+    pass
