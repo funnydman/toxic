@@ -1,6 +1,6 @@
 import io
 import re
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer
 from inspect import signature
 from typing import Callable, Tuple
 
@@ -9,6 +9,7 @@ from toxic.core import status
 from toxic.core.exceptions import HTTPException
 from toxic.core.request import Request
 from toxic.core.resource import Router
+from toxic.core.server.base_http import BaseHTTPRequestHandler
 
 
 class HTTPRequestHandler(BaseHTTPRequestHandler):
@@ -21,27 +22,6 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.handle_one_request()
         while not self.close_connection:
             self.handle_one_request()
-
-    def __handle_one_request(self):
-        try:
-            self.raw_requestline = self.rfile.readline(65537)
-            if len(self.raw_requestline) > 65536:
-                self.requestline = ''
-                self.request_version = ''
-                self.command = ''
-                self.send_error(status.REQUEST_URI_TOO_LONG)
-                return
-            if not self.raw_requestline:
-                self.close_connection = True
-                return
-            if not self.parse_request():
-                # An error code has been sent, just exit
-                return
-
-        except TimeoutError as e:
-            # a read or a write timed out.  Discard this connection
-            self.log_error("Request timed out: %r", e)
-            self.close_connection = True
 
     def process_request(
             self,
@@ -82,7 +62,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         return dict(res)
 
     def handle_one_request(self):
-        self.__handle_one_request()
+        self._handle_one_request()
         data = {}
 
         if self.headers['Content-Type'] == ContentType.application_form_urlencoded:
@@ -131,6 +111,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         f = io.BufferedReader(f)
 
         self.wfile.write(f.read())
+
         self.wfile.flush()  # actually send the response if not already done.
 
         self.log_request(response.status_code)

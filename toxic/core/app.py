@@ -1,7 +1,7 @@
 from http.server import HTTPServer
 from typing import List
 
-from toxic.core.http_server import Server, HTTPRequestHandler
+from toxic.core.server.http_server import Server, HTTPRequestHandler
 from toxic.core.resource import APIRouter
 
 

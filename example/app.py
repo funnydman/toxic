@@ -1,15 +1,18 @@
 import os
 import sys
 
-from example.db.client import conn, queries
-from toxic.core import server, Toxic, Response, status
+from example.db.client import queries, conn
 from toxic.core.exceptions import HTTPException
-from toxic.core.helpers import render_template
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from toxic.core import server, Toxic, Response, status
+from toxic.core.helpers import render_template
+
 from toxic.core.resource import Resource, APIRouter
 
 router = APIRouter()
+
+TEMPLATE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class SignInView(Resource):
@@ -19,12 +22,12 @@ class SignInView(Resource):
         # if user is None:
         #     raise HTTPException(detail='NO_SUCH_USER', status_code=status.HTTP_NOT_FOUND)
 
-        return Response({})
+        return Response({'signed': True})
 
 
 class HomeView(Resource):
     def get(self):
-        return render_template('index.html', {})
+        return render_template(os.path.join(TEMPLATE_DIR, 'index.html'), {})
 
 
 router.register('^/$', HomeView, name='index')

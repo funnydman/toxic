@@ -1,3 +1,3 @@
 from .app import Toxic
-from .http_server import server
+from toxic.core.server.http_server import server
 from .responses import Response
