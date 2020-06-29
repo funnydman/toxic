@@ -1,104 +1,99 @@
 import os
 import sys
-from typing import List, Tuple
+
+from toxic.core.server.http_server import HTTPServer, HTTPRequestHandler
 
 enc, esc = sys.getfilesystemencoding(), 'surrogateescape'
 
 
-def unicode_to_wsgi(u):
-    # Convert an environment variable to a WSGI "bytes-as-unicode" string
-    return u.encode(enc, esc).decode('iso-8859-1')
+class my_wsgi:
 
-
-def wsgi_to_bytes(s):
-    return s.encode('iso-8859-1')
-
-
-class Wsgi:
-    def __init__(self):
-        pass
-
-    def run(self, application):
-        pass
-
-
-def run_with_wsgi(application):
-    environ = {k: unicode_to_wsgi(v) for k, v in os.environ.items()}
-
-    environ['wsgi.input'] = sys.stdin.buffer
-    environ['wsgi.errors'] = sys.stderr
-    environ['wsgi.version'] = (1, 0)
-    environ['wsgi.multithread'] = False
-    environ['wsgi.multiprocess'] = True
-    environ['wsgi.run_once'] = True
-
-    if environ.get('HTTPS', 'off') in ('on', '1'):
-        environ['wsgi.url_scheme'] = 'https'
-    else:
-        environ['wsgi.url_scheme'] = 'http'
+    def __init__(self, host: str, port: int) -> None:
+        self.host = host
+        self.port = port
 
     headers_set = []
     headers_sent = []
 
-    def write(data):
+    @classmethod
+    def run(cls, application, host: str, port: int):
+        self = cls(host, port)
+        http_server = HTTPServer(handler_cls=HTTPRequestHandler)
+
+        application.http_server = http_server
+        application.http_server.run(host=host, port=port)
+
+        self._run(application)
+
+    def _run(self, application) -> None:
+
+        environ = {k: self.unicode_to_wsgi(v) for k, v in os.environ.items()}
+
+        environ['wsgi.input'] = sys.stdin.buffer
+        environ['wsgi.errors'] = sys.stderr
+        environ['wsgi.version'] = (1, 0)
+        environ['wsgi.multithread'] = False
+        environ['wsgi.multiprocess'] = True
+        environ['wsgi.run_once'] = True
+
+        if environ.get('HTTPS', 'off') in ('on', '1'):
+            environ['wsgi.url_scheme'] = 'https'
+        else:
+            environ['wsgi.url_scheme'] = 'http'
+
+        result = application(environ, self.start_response)
+        try:
+            for data in result:
+                if data:  # don't send headers until body appears
+                    self.write(data)
+            if not self.headers_sent:
+                self.write('')  # send headers now if body was empty
+        finally:
+            pass
+            # if hasattr(result, 'close'):
+            #     result.close()  # what is close and how it should behave?
+
+    def write(self, data):
         out = sys.stdout.buffer
 
-        if not headers_set:
+        if not self.headers_set:
             raise AssertionError("write() before start_response()")
 
-        elif not headers_sent:
+        elif not self.headers_sent:
             # Before the first output, send the stored headers
-            status, response_headers = headers_sent[:] = headers_set
-            out.write(wsgi_to_bytes('Status: %s\r\n' % status))
+            status, response_headers = self.headers_sent[:] = self.headers_set
+            out.write(self.wsgi_to_bytes('Status: %s\r\n' % status))
             for header in response_headers:
-                out.write(wsgi_to_bytes('%s: %s\r\n' % header))
-            out.write(wsgi_to_bytes('\r\n'))
+                out.write(self.wsgi_to_bytes('%s: %s\r\n' % header))
+            out.write(self.wsgi_to_bytes('\r\n'))
 
         out.write(data)
         out.flush()
 
-    def start_response(status, response_headers, exc_info=None):
+    def start_response(self, status, response_headers, exc_info=None):
         if exc_info:
             try:
-                if headers_sent:
+                if self.headers_sent:
                     # Re-raise original exception if headers sent
                     raise exc_info[1].with_traceback(exc_info[2])
             finally:
                 exc_info = None  # avoid dangling circular ref
-        elif headers_set:
+        elif self.headers_set:
             raise AssertionError("Headers already set!")
 
-        headers_set[:] = [status, response_headers]
+        self.headers_set[:] = [status, response_headers]
 
         # Note: error checking on the headers should happen here,
         # *after* the headers are set.  That way, if an error
         # occurs, start_response can only be re-called with
         # exc_info set.
 
-        return write
+        return self.write
 
-    result = application(environ, start_response)
-    try:
-        for data in result:
-            if data:  # don't send headers until body appears
-                write(data)
-        if not headers_sent:
-            write('')  # send headers now if body was empty
-    finally:
-        if hasattr(result, 'close'):
-            result.close()
+    @staticmethod
+    def unicode_to_wsgi(u):
+        return u.encode(enc, esc).decode('iso-8859-1')
 
-
-class StartResponse:
-    def __init__(
-            self,
-            status: str,
-            response_headers: List[Tuple[str, str]],
-            exc_info: sys.exc_info() = None
-    ) -> None:
-        self.status = status
-        self.response_headers = response_headers
-        self.exc_info = exc_info
-
-    def __call__(self):
-        pass
+    @staticmethod
+    def wsgi_to_bytes(s):
+        return s.encode('iso-8859-1')

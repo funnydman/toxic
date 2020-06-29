@@ -1,100 +1,132 @@
-import re
-from http.server import HTTPServer
-from inspect import signature
-from typing import Callable, Tuple
+import os
+import selectors
+import sys
+import traceback
+from socket import AF_INET, SOCK_STREAM, socket, SOL_SOCKET, SO_REUSEADDR
+from typing import Tuple
 
-from toxic.core import status
-from toxic.core.exceptions import HTTPException
-from toxic.core.request import Request
-from toxic.core.resource import Router
-from toxic.core.server.main import RequestHandler
+from toxic.core.server.constants import METHOD_IS_NOT_SUPPORTED, HTTP_VERSION_IS_NOT_SUPPORTED
+from toxic.core.server.request_handler import HTTPRequestHandler
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+from toxic.core.server.exceptions import BadRequestLine
 
-class HTTPRequestHandler(RequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.logger = HTTPRequestHandler()
-
-    def handle(self) -> None:
-        super().handle()
-        self._handle_one_request()
-
-    def process_request(
-            self,
-            handler,
-            request: Request,
-            params: dict,
-    ) -> Callable:
-        _handler = getattr(handler.handler_cls(), request.method.lower(), None)
-        if _handler is None:
-            self.send_error(code=status.HTTP_NOT_FOUND, message='method is not allowed')
-            raise HTTPException(detail='method is not allowed')
-
-        params = {**params, 'request': request}
-
-        params_to_inject = self.__get_injection_params(_handler, params)
-        try:
-            result = _handler(**params_to_inject)
-            return result
-        except Exception as e:
-            self.send_error(code=status.HTTP_SERVER_ERROR, explain=str(e))
-            raise
-
-    def find_handler_by_path(self, path: str) -> Tuple[Router, dict]:
-        for router in self.app.routers_collection:
-            for r in router.routers:
-                match = re.match(r.path, path)
-                if match:
-                    params = match.groupdict()
-                    return r, params
-        # raise 404
-        self.send_error(code=404)
-
-    def _handle_one_request(self):
-
-        handler, params = self.find_handler_by_path(self.request.path)
-
-        response = self.process_request(handler, self.request, params)
-
-        self._send_response(response)
-
-    def send_begin_header(self, status_code):
-        self._header_buffer = []
-        _header_str = f'HTTP/1.0 {status_code}\r\n'
-        self._header_buffer.append(_header_str.encode())
-
-    def __end_headers(self):
-        self._header_buffer.append(b"\r\n")
-        _headers_str = b"".join(self._header_buffer)
-        self.wfile.write(_headers_str)
-        # clear the buffer
-        self._header_buffer = []
-
-    def __get_injection_params(self, handler, params=None):
-        try:
-            expected_params = signature(handler).parameters
-            passed_keys = set(expected_params.keys()) & set(params.keys())
-            result = {k: v for k, v in params.items() if k in passed_keys}
-            if 'request' in expected_params:
-                result['request'] = params['request']
-
-            return result
-        except Exception as e:
-            self.send_error(code=500, explain=str(e))
+allowed_http_methods = frozenset({'OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE', 'CONNECT'})
 
 
-class Server:
-    def __init__(self, server_class, handler_class):
-        self.server_class = server_class
-        self.handler_class = handler_class
+class TCPServer:
+    address_family = AF_INET
+    type = SOCK_STREAM
 
-    def run(self, app, host='', port=8000):
-        server_address = (host, port)
-        httpd = self.server_class(server_address, self.handler_class)
-        self.handler_class.app = app
+    def __init__(self) -> None:
+        """
+        Notes:
+            Socket must be in blocking mode to use makefile
+        """
+        self.socket = socket(family=self.address_family, type=self.type)
+        self.socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 
-        httpd.serve_forever()
+        self.sel = selectors.DefaultSelector()
+
+    def __del__(self):
+        self.close()
+
+    def close(self) -> None:
+        self.socket.close()
+
+    def accept(self, sock, mask):
+        conn, addr = self.socket.accept()
+        self.wfile = conn.makefile('wb', buffering=0)
+        self.rfile = conn.makefile('rb', buffering=0)
+
+        self.sel.register(conn, selectors.EVENT_READ, self.read)
+
+    def read(self, conn, mask):
+        with conn:
+            try:
+                self.handler(conn)
+            finally:
+                self.sel.unregister(conn)
+                self.wfile.flush()
+                self.wfile.close()
+                self.rfile.close()
+
+    def run(self, host: str, port: int) -> None:
+        self.sel.register(self.socket, selectors.EVENT_READ, self.accept)
+
+        self.socket.bind((host, port))
+        self.socket.listen()
+        while True:
+            events = self.sel.select(timeout=0.2)
+            for key, mask in events:
+                try:
+                    callback = key.data
+                    callback(key.fileobj, mask)
+                except Exception as e:
+                    # middleware here
+                    # do not close the connection just print the error message
+                    traceback.print_exc()
+
+    def handler(self, conn) -> None:
+        pass
 
 
-server = Server(HTTPServer, HTTPRequestHandler)
+class HTTPServer(TCPServer):
+    def __init__(self, handler_cls):
+        super().__init__()
+        self.handler_cls = handler_cls
+
+    default_http_version = 'HTTP/1.1'
+    max_request_uri_len = 8192  # 8KB
+    max_bytes_to_read = 65535
+
+    default_decoding = 'latin-1'
+
+    def parse_request_line(self, raw_line: bytes) -> Tuple[str, str, str]:
+        if len(raw_line) >= self.max_request_uri_len:
+            raise BadRequestLine('Request-URI Too Long')
+        if not raw_line.endswith(b'\r\n'):
+            raise BadRequestLine('Request line must be followed by CRLF')
+
+        request_line = raw_line.decode(self.default_decoding).strip('\r\n')
+
+        method, request_uri, http_version = request_line.split(" ")
+        if method not in allowed_http_methods:
+            raise BadRequestLine(METHOD_IS_NOT_SUPPORTED.format(method))
+        if http_version != self.default_http_version:
+            raise BadRequestLine(HTTP_VERSION_IS_NOT_SUPPORTED.format(http_version))
+        return method, request_uri, http_version
+
+    def parse_headers(self, raw_headers: bytes) -> dict:
+        headers: list = raw_headers.decode(self.default_decoding).splitlines()
+
+        return dict([h.split(': ', 1) for h in headers])
+
+    # mock
+    def log_request(self, string):
+        sys.stdout.write(string + '\n')
+
+    def handler(self, conn):
+        # call here  handler
+        raw_request_line = self.rfile.readline()
+        method, request_uri, http_version = self.parse_request_line(raw_request_line)
+
+        method_handler = self.handler_cls(method, request_uri)
+
+        result = method_handler()
+
+        self.log_request(method + ' ' + request_uri)
+
+        request_data = self.rfile.read(self.max_bytes_to_read)
+
+        raw_headers, _, raw_data = request_data.rpartition(b'\r\n')
+
+        self.headers = self.parse_headers(raw_headers)
+
+        self.wfile.write(b'HTTP/1.1 200 OK\r\n\r\n')
+
+
+if __name__ == '__main__':
+    server = HTTPServer(handler_cls=HTTPRequestHandler)
+
+    server.run(host='', port=9000)

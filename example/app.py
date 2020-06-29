@@ -1,11 +1,11 @@
 import os
 import sys
 
-from toxic.core.server.wsgi import run_with_wsgi
+from toxic.core.app import Toxic
+from toxic.core.responses import Response
+from toxic.core.server.wsgi import my_wsgi
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from toxic.core import Toxic, Response
-from toxic.core.helpers import render_template
+sys.path.append(os.getcwd())
 
 from toxic.core.resource import Resource, APIRouter
 
@@ -23,7 +23,7 @@ class SignInView(Resource):
 
 class HomeView(Resource):
     def get(self):
-        return render_template(os.path.join(TEMPLATE_DIR, 'index.html'), {})
+        return {}
 
 
 router.register('^/$', HomeView, name='index')
@@ -34,4 +34,4 @@ app = Toxic()
 app.add_router(router)
 
 if __name__ == '__main__':
-    run_with_wsgi(app)
+    my_wsgi.run(app, host='', port=8000)
